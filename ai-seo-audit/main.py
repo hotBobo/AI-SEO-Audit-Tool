@@ -36,21 +36,37 @@ def read_root():
 
 @app.get("/audit")
 def run_audit(url: str = Query(..., description="The full URL of the website to audit")):
-    if not url.startswith("http://") and not url.startswith("https://"):
-        raise HTTPException(
-            status_code=400, 
-            detail="Invalid URL format. URL must start with 'http://' or 'https://'"
-        )
+    # Clean up any accidental leading/trailing whitespace the user might have inputted
+    url = url.strip()
 
-    # Pillar 1: Crawl Accessibility Rules
+    # Smart Protocol Auto-Correction:
+    # If the user didn't provide a protocol, we assume modern https:// first
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = f"https://{url}"
+
+    # We invoke the network call to fetch the robots.txt file
     raw_data = fetch_robots_txt(url)
+    
+    # Fallback Mechanism:
+    # If our automated https:// attempt completely failed (e.g. SSL/TLS error on an old site),
+    # we automatically try a legacy plain http:// fallback before giving up.
+    if not raw_data and url.startswith("https://"):
+        fallback_url = url.replace("https://", "http://", 1)
+        raw_data = fetch_robots_txt(fallback_url)
+        if raw_data:
+            url = fallback_url # Update our tracking URL if fallback worked
+
+    # If both attempts returned nothing (e.g., completely invalid domain or offline site)
+    if not raw_data:
+        # Check if the robots file was missing (404) or if the whole site is unreachable
+        # If it was a clean 404, fetch_robots_txt returns an empty string but handles it.
+        # Let's verify our parser rules can still evaluate it safely.
+        pass
+
     parser = parse_rules(raw_data)
     crawler_report = analyze_ai_accessibility(parser)
-    
-    # Pillar 2: Deep Content & HTML Inspection
     html_report = analyze_html_structure(url)
     
-    # Combine everything into a master response payload
     return {
         "target_url": url,
         "crawler_accessibility": crawler_report,
