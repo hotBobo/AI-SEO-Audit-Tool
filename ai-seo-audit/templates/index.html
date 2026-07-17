@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SEO Audit Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 font-sans">
+
+    <div class="max-w-2xl mx-auto px-4 py-12">
+        
+        <header class="text-center mb-10">
+            <h1 class="text-3xl font-extrabold text-indigo-900 tracking-tight">AI SEO Audit Engine</h1>
+            <p class="mt-2 text-slate-600">Scan any website to check how searchable it is for Generative AI engines.</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+            <div class="flex flex-col gap-3">
+                <label for="urlInput" class="text-sm font-semibold text-slate-700">Enter Website URL</label>
+                <div class="flex gap-2">
+                    <input 
+                        type="url" 
+                        id="urlInput" 
+                        placeholder="https://www.example.com" 
+                        class="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800"
+                        required
+                        onkeydown="handleKeyPress(event)"
+                    >
+                    <button 
+                        onclick="runAudit()" 
+                        id="scanBtn"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg transition duration-150 ease-in-out"
+                    >
+                        Scan Site
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="loading" class="hidden text-center py-6">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent"></div>
+            <p class="mt-2 text-sm text-slate-500">Analyzing crawlers and protocols...</p>
+        </div>
+
+        <div id="errorBox" class="hidden bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-lg mb-8 text-sm"></div>
+
+        <div id="resultsCard" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="bg-indigo-900 px-6 py-4">
+                <h2 class="text-lg font-bold text-white">Audit Report</h2>
+                <p id="targetUrlText" class="text-indigo-200 text-xs mt-0.5 truncate"></p>
+            </div>
+            
+            <div class="p-6 space-y-6">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Search & Discovery (Important for SEO)</h3>
+                    <div id="searchBotsList" class="space-y-3"></div>
+                </div>
+
+                <hr class="border-slate-100" />
+
+                <div>
+                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Model Training (Can block to protect content)</h3>
+                    <div id="trainingBotsList" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        function handleKeyPress(event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                runAudit();
+            }
+        }
+
+        async function runAudit() {
+            const urlInput = document.getElementById('urlInput').value.trim();
+            const scanBtn = document.getElementById('scanBtn');
+            const loading = document.getElementById('loading');
+            const resultsCard = document.getElementById('resultsCard');
+            const errorBox = document.getElementById('errorBox');
+            
+            // 1. Reset UI State
+            errorBox.classList.add('hidden');
+            resultsCard.classList.add('hidden');
+            
+            if (!urlInput) {
+                showError("Please enter a URL to analyze.");
+                return;
+            }
+
+            // 2. Trigger loading states
+            loading.classList.remove('hidden');
+            scanBtn.disabled = true;
+            scanBtn.classList.add('opacity-50');
+
+            try {
+                // 3. Make the API Call to our FastAPI backend
+                // Encodes the URL safely as a query string parameter
+                const response = await fetch(`/audit?url=${encodeURIComponent(urlInput)}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || "An error occurred while running the audit.");
+                }
+
+                // 4. Render the JSON data as clean HTML elements
+                renderResults(data);
+
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                // 5. Turn off loading states
+                loading.classList.add('hidden');
+                scanBtn.disabled = false;
+                scanBtn.classList.remove('opacity-50');
+            }
+        }
+
+        function showError(msg) {
+            const errorBox = document.getElementById('errorBox');
+            errorBox.innerText = msg;
+            errorBox.classList.remove('hidden');
+        }
+
+function renderResults(data) {
+            document.getElementById('targetUrlText').innerText = data.target_url;
+            
+            const searchContainer = document.getElementById('searchBotsList');
+            const trainingContainer = document.getElementById('trainingBotsList');
+            
+            // Clear out old results
+            searchContainer.innerHTML = '';
+            trainingContainer.innerHTML = '';
+
+            const searchKey = "Search & Discovery (Should be ALLOWED for SEO)";
+            const trainingKey = "Model Training (Can be BLOCKED to protect IP)";
+
+            // 1. Render Crawl Accessibility Items
+            Object.entries(data.crawler_accessibility[searchKey]).forEach(([bot, status]) => {
+                searchContainer.appendChild(createBotRow(bot, status));
+            });
+
+            Object.entries(data.crawler_accessibility[trainingKey]).forEach(([bot, status]) => {
+                trainingContainer.appendChild(createBotRow(bot, status));
+            });
+
+            // 2. Render HTML Deep Content Optimization Metrics
+            // Remove any existing dynamic cards from previous runs so they don't stack up
+            const oldDeepCards = document.querySelectorAll('.deep-audit-card');
+            oldDeepCards.forEach(card => card.remove());
+
+            const mainContainer = document.querySelector('#resultsCard .p-6');
+            const contentData = data.content_structure;
+
+            // Create Content Audit Header Block
+            const htmlHeader = document.createElement('hr');
+            htmlHeader.className = "border-slate-100 my-6 deep-audit-card";
+            mainContainer.appendChild(htmlHeader);
+
+            // Row block for Schema Markup
+            const schemaRow = document.createElement('div');
+            schemaRow.className = "deep-audit-card mb-6";
+            schemaRow.innerHTML = `
+                <div class="flex items-center justify-between mb-1">
+                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider">Structured Data / Schema</h3>
+                    <span class="text-xs font-bold px-2.5 py-0.5 rounded-full ${contentData.schema_markup.found ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+                        ${contentData.schema_markup.status}
+                    </span>
+                </div>
+                <p class="text-xs text-slate-500">
+                    ${contentData.schema_markup.found 
+                        ? `Detected schemas: <code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600">${contentData.schema_markup.types_detected.join(', ')}</code>`
+                        : 'No Schema tags detected. AI models have to guess your business hours, services, and locations.'}
+                </p>
+            `;
+            mainContainer.appendChild(schemaRow);
+
+            // Row block for Conversational Headings
+            const headingRow = document.createElement('div');
+            headingRow.className = "deep-audit-card";
+            headingRow.innerHTML = `
+                <div class="flex items-center justify-between mb-1">
+                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider">Conversational FAQ Headings</h3>
+                    <span class="text-xs font-bold px-2.5 py-0.5 rounded-full ${contentData.conversational_headings.count > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+                        ${contentData.conversational_headings.status}
+                    </span>
+                </div>
+                <p class="text-xs text-slate-500 mb-2">Found ${contentData.conversational_headings.count} headers targeted toward natural phrasing.</p>
+                ${contentData.conversational_headings.examples.length > 0 
+                    ? `<div class="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs text-slate-600 space-y-1">
+                        <strong>Examples found:</strong>
+                        ${contentData.conversational_headings.examples.map(ex => `<div>• "${ex}"</div>`).join('')}
+                       </div>`
+                    : ''}
+            `;
+            mainContainer.appendChild(headingRow);
+
+            // Make the full results card visible
+            document.getElementById('resultsCard').classList.remove('hidden');
+        }
+
+        // Helper function to build a structured DOM row for each bot
+        function createBotRow(botName, status) {
+            const row = document.createElement('div');
+            row.className = "flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100";
+            
+            const nameEl = document.createElement('span');
+            nameEl.className = "font-medium text-slate-700 text-sm";
+            nameEl.innerText = botName;
+            
+            const badgeEl = document.createElement('span');
+            if (status === "ALLOWED") {
+                badgeEl.className = "px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800";
+                badgeEl.innerText = "Allowed";
+            } else {
+                badgeEl.className = "px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-100 text-rose-800";
+                badgeEl.innerText = "Blocked";
+            }
+            
+            row.appendChild(nameEl);
+            row.appendChild(badgeEl);
+            return row;
+        }
+    </script>
+</body>
+</html>
