@@ -9,6 +9,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app = app
+
 # --- 1. Serve our Static HTML UI Page on the Root Route (/) ---
 @app.get("/", response_class=HTMLResponse)
 def read_root():
