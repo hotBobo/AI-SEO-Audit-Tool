@@ -21,13 +21,13 @@ def fetch_robots_txt(url: str) -> str:
     headers = {'User-Agent': 'AIAuditEngine/1.0 (Educational Bot)'}
     
     try:
-        # Fetch the file. We set a timeout so the script doesn't hang indefinitely.
+        # Fetch the file. Set a timeout so the script doesn't hang indefinitely.
         response = requests.get(robots_url, headers=headers, timeout=10)
         
         if response.status_code == 200:
             return response.text
         elif response.status_code == 404:
-            # Under RFC standards, a 404 means implicit unconditional access
+            # Under RFC standards, a 404 means implicit unconditional access for all bots
             print("No robots.txt found (404). All bots have access.")
             return ""
         else:
@@ -38,6 +38,26 @@ def fetch_robots_txt(url: str) -> str:
         print(f"Network error trying to connect to {robots_url}: {e}")
         return ""
     
+def check_website_exists(url: str) -> bool:
+    '''
+    Checks if the website exists in the first place. Returns True if reachable, otherwise False.
+    '''
+    headers = {'User-Agent': 'AIAuditEngine/1.0 (Educational Bot)'}
+    try:
+        response = requests.head(url, headers=headers, timeout=10)
+        
+        # Fallback if a server blocks HEAD requests but is actually online
+        if response.status_code in [403, 405]:
+            response = requests.get(url, headers=headers, timeout=5, stream=True)
+            
+        if response.status_code >= 400:
+            print(f"URL is unreachable or returned error code: {response.status_code}")
+            return False
+        return True
+    except requests.RequestException as e:
+        print(f"Network error trying to connect to {url}: {e}")
+        return False
+
 def parse_rules(raw_text: str) -> urllib.robotparser.RobotFileParser:
     """
     Instantiates a RobotFileParser object and parses raw robots.txt data.
