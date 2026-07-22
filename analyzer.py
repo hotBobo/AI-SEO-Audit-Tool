@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import re
 
 # Loads the api keys from .env
-load_dotenv()
+load_dotenv(override=False)
 
 def query_perplexity_visibility(target_url: str, keyword_query: str, custom_key: str = None) -> dict:
     '''
