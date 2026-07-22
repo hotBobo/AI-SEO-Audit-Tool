@@ -1,7 +1,8 @@
 import os
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Header
 from fastapi.responses import HTMLResponse
-from analyzer import fetch_robots_txt, parse_rules, analyze_ai_accessibility, analyze_html_structure, check_website_exists
+from analyzer import fetch_robots_txt, parse_rules, analyze_ai_accessibility, analyze_html_structure, check_website_exists, query_perplexity_visibility
+from typing import Optional
 
 app = FastAPI(
     title="AI SEO Audit API",
@@ -35,7 +36,7 @@ def read_root():
 # Update your import line at the top to include our new function
 
 @app.get("/audit")
-def run_audit(url: str = Query(..., description="The full URL of the website to audit")):
+def run_audit(url: str = Query(..., description="The URL of the website to audit"), keyword: str = Query(description="Target audit niche keyword"),x_perplexity_key: Optional[str] = Header(None)):
     # Clean up any accidental leading/trailing whitespace the user might have inputted
     url = url.strip()
 
@@ -67,6 +68,23 @@ def run_audit(url: str = Query(..., description="The full URL of the website to 
     parser = parse_rules(raw_data)
     crawler_report = analyze_ai_accessibility(parser)
     html_report = analyze_html_structure(url)
+
+    if keyword:
+        perplexity_res = query_perplexity_visibility(url, keyword, custom_key=x_perplexity_key)
+
+        ai_matrix = [perplexity_res]
+        positive_hits = sum(1 for ai in ai_matrix if ai["site_found"])
+        return {
+            "target_url": url,
+            "crawler_accessibility": crawler_report,
+            "content_structure": html_report,
+            "ai_visibility_matrix": {
+                "positive_hits": positive_hits,
+                "ai_len": len(ai_matrix),
+                "score": f"{positive_hits}/{len(ai_matrix)} Engines Surfaced Your Site",
+                "breakdown": ai_matrix
+            }
+        }
     
     return {
         "target_url": url,
