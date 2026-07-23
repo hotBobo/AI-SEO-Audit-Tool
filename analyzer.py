@@ -6,78 +6,192 @@ import json
 import os
 from dotenv import load_dotenv
 import re
+from typing import Optional
 
 # Loads the api keys from .env
 load_dotenv(override=False)
 
-def query_perplexity_visibility(target_url: str, keyword_query: str, custom_key: str = None) -> dict:
-    '''
-    Prompts a search-grounded AI engine to look up a industry query, 
-    inspects its citation sources, and reports if the target URL was cited.
-    '''
-    api_key = custom_key or os.getenv("PERPLEXITY_API_KEY")
+def query_ai_visibility(
+    engine: str, 
+    target_url: str, 
+    keyword_query: str, 
+    custom_key: Optional[str] = None
+) -> dict:
+    """
+    Unified function to query Perplexity, ChatGPT, Claude, or Gemini for site visibility.
+    """
+    engine_lower = engine.lower()
 
-    # Return a graceful fallback if the developer hasn't configured a key yet (which I haven't yet lol)
+    # Match engine to appropriate environment variable
+    env_vars = {
+        "perplexity": "PERPLEXITY_API_KEY",
+        "chatgpt": "OPENAI_API_KEY",
+        "claude": "ANTHROPIC_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "groq": "GROQ_API_KEY"
+    }
+
+    # 1. Resolve API Key
+    api_key = custom_key or os.getenv(env_vars.get(engine_lower, ""))
     if not api_key:
         return {
-            "engine": "Perplexity Sonar",
+            "engine": engine.capitalize(),
             "site_found": False,
             "citations_reviewed": 0,
-            "snippet_summary": "API Key missing. Configure PERPLEXITY_API_KEY to activate live AI ranking simulations."
+            "snippet_summary": f"API Key missing for {engine.capitalize()}."
         }
-    
-    url = "https://api.perplexity.ai/chat/completions"
 
-    # Now we make the actual promts
-    payload = {
-        "model": "sonar", # Best for web searches
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are an advanced SEO auditing assistant. You must run live searches and strictly report back which websites you cited. Do not use raw markdown syntax or citation markers in your response. Only return plain text."
-            },
-            {
-                "role": "user",
-                "content": f"Search for: '{keyword_query}'. Analyze the top citations and websites you pull back to answer this query. Does the website '{target_url}' appear prominently as a reference or recommendation? Summarize in 2 sentences how visible this site is in your search context."
-            }
-        ]
-    }
-    # Give us our credentials
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    raw_text = ""
+    citations = []
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=15)
-        if response.status_code == 200:
-            ai_data = response.json()
-            ai_text = ai_data["choices"][0]["message"]["content"]
-            # Perplecity sauce
-            citations = ai_data.get("citations", [])
-            # Clean up site url to check for basic match (ex. says greenehouse.agency/about_us instead of just greenehouse.agency)
-            site_found = any(is_domain_in_text(target_url, source) for source in citations)
-            
-            
-            return {
-                "engine": "Perplexity Sonar",
-                "site_found": site_found,
-                "citations_reviewed": len(citations),
-                "snippet_summary": ai_text
-            }
+        # 2. Switch Statement based on Engine
+        match engine_lower:
+            case "perplexity":
+                url = "https://api.perplexity.ai/chat/completions"
+                payload = {
+                    "model": "sonar",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are an advanced SEO auditing assistant. You must run live searches and strictly report back which websites you cited. Do not use raw markdown syntax or citation markers in your response. Only return plain text."
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Search for: '{keyword_query}'. Analyze the top citations and websites you pull back to answer this query. Does the website '{target_url}' appear prominently as a reference or recommendation? Summarize in 2 sentences how visible this site is in your search context."
+                        }
+                    ]
+                }
+                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                resp = requests.post(url, json=payload, headers=headers, timeout=15).json()
+                
+                raw_text = resp["choices"][0]["message"]["content"]
+                citations = resp.get("citations", [])
+
+            case "chatgpt":
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key)
+                resp = client.chat.completions.create(
+                    model="gpt-5-search-api",
+                    web_search_options={},
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an advanced SEO auditing assistant. You must run live searches and strictly report back which websites you cited. Do not use raw markdown syntax or citation markers in your response. Only return plain text."
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Search for: '{keyword_query}'. Analyze the top citations and websites you pull back to answer this query. Does the website '{target_url}' appear prominently as a reference or recommendation? Summarize in 2 sentences how visible this site is in your search context."
+                        }
+                    ]
+                )
+                raw_text = resp.choices[0].message.content
+                # Collect citation annotations if available
+                annotations = getattr(resp.choices[0].message, "annotations", [])
+                citations = [str(a) for a in annotations]
+
+            case "claude":
+                from anthropic import Anthropic
+                client = Anthropic(api_key=api_key)
+                resp = client.messages.create(
+                    model="claude-opus-4-8",
+                    max_tokens=500,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an advanced SEO auditing assistant. You must run live searches and strictly report back which websites you cited. Do not use raw markdown syntax or citation markers in your response. Only return plain text."
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Search for: '{keyword_query}'. Analyze the top citations and websites you pull back to answer this query. Does the website '{target_url}' appear prominently as a reference or recommendation? Summarize in 2 sentences how visible this site is in your search context."
+                        }
+                    ],
+                    tools=[{"type": "web_search_20250305", "name": "web_search"}]
+                )
+                for block in resp.content:
+                    if hasattr(block, 'text'):
+                        raw_text += block.text
+
+            case "gemini":
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=api_key)
+                resp = client.models.generate_content(
+                    model="gemini-3.6-flash",
+                    contents=f"You are an advanced SEO auditing assistant. You must run live searches and strictly report back which websites you cited. Do not use raw markdown syntax or citation markers in your response. Only return plain text. Search for: '{keyword_query}'. Analyze the top citations and websites you pull back to answer this query. Does the website '{target_url}' appear prominently as a reference or recommendation? Summarize in 2 sentences how visible this site is in your search context.",
+                    config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+                )
+                raw_text = resp.text or ""
+                # Parse citations out of grounding metadata
+                try:
+                    for chunk in resp.candidates[0].grounding_metadata.grounding_chunks:
+                        if chunk.web and chunk.web.uri:
+                            citations.append(chunk.web.uri)
+                except Exception:
+                    pass
+
+            case "groq":
+                from groq import Groq
+                client = Groq(api_key=api_key)
+                prompt = (
+                    f"Search your knowledge context for query: '{keyword_query}'. "
+                    f"Does the domain '{target_url}' typically rank as a primary source or top result? "
+                    f"Summarize in 2 short sentences."
+                )
+                resp = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="openai/gpt-oss-120b",  # Free Llama 3.3 70B on Groq
+                )
+                choice = resp.choices[0]
+                raw_text = choice.message.content or ""
+                if choice.message.executed_tools:
+                    citations = choice.message.executed_tools[0].search_results
+
+            case _:
+                return {"engine": engine, "site_found": False, "snippet_summary": f"Unsupported engine '{engine}'."}
+
+        # 3. Unified Post-Processing (Cleaning + Domain Matching)
+        cleaned_text = clean_ai_text(raw_text)
+        site_found = any(is_domain_in_text(target_url, ref) for ref in citations)
+
+        return {
+            "engine": engine.capitalize(),
+            "site_found": site_found,
+            "citations_reviewed": len(citations),
+            "snippet_summary": cleaned_text
+        }
+
     except Exception as e:
-        print(f"AI Simulation Error: {e}")
-    return {
-        "engine": "Perplexity Sonar",
-        "site_found": False,
-        "citations_reviewed": 0,
-        "snippet_summary": "Simulation execution failed or timed out."
-    }
+            error_msg = str(e).lower()
+            print(f"[{engine.upper()}] Simulation Error: {e}")
+
+            # --- FALLBACK CHECK FOR LOW CREDITS / QUOTA EXCEEDED ---
+            if any(term in error_msg for term in ["insufficient_quota", "credit", "balance", "429", "quota"]):
+                friendly_summary = f"Account out of API credits or rate limited. Provide a funded key to enable {engine.capitalize()}."
+            else:
+                friendly_summary = f"Execution failed or timed out: {e}"
+
+            return {
+                "engine": engine.capitalize(),
+                "site_found": False,
+                "citations_reviewed": 0,
+                "snippet_summary": friendly_summary
+            }
 
 def is_domain_in_text(target_url: str, text: str) -> bool:
     """Normalizes the target URL domain to check if it appears in the text."""
     clean_domain = re.sub(r'https?://(www\.)?', '', target_url.lower()).split('/')[0]
     return clean_domain in text.lower() or target_url.lower() in text.lower()
+
+def clean_ai_text(text: str) -> str:
+    """Strips markdown bolding and citation footnotes like [1], [2][7]."""
+    # Remove markdown bold/italics symbols (* and _)
+    cleaned = re.sub(r'[*_]', '', text)
+    # Remove citation brackets like [1], [2], [10]
+    cleaned = re.sub(r'\[\d+\]', '', cleaned)
+    # Clean up double spaces caused by removing brackets
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned.strip()
 
 def fetch_robots_txt(url: str) -> str:
     """

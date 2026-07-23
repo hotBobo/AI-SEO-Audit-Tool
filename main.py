@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, Query, HTTPException, Header
 from fastapi.responses import HTMLResponse
-from analyzer import fetch_robots_txt, parse_rules, analyze_ai_accessibility, analyze_html_structure, check_website_exists, query_perplexity_visibility
+from analyzer import fetch_robots_txt, parse_rules, analyze_ai_accessibility, analyze_html_structure, check_website_exists, query_ai_visibility
 from typing import Optional
 
 app = FastAPI(
@@ -36,7 +36,15 @@ def read_root():
 # Update your import line at the top to include our new function
 
 @app.get("/audit")
-def run_audit(url: str = Query(..., description="The URL of the website to audit"), keyword: str = Query(description="Target audit niche keyword"),x_perplexity_key: Optional[str] = Header(None)):
+def run_audit(url: str = Query(..., description="The URL of the website to audit"), keyword: str = Query(description="Target audit niche keyword"),
+    x_perplexity_key: Optional[str] = Header(None),
+    x_gemini_key: Optional[str] = Header(None),
+    x_openai_key: Optional[str] = Header(None),
+    x_claude_key: Optional[str] = Header(None),
+    x_groq_key: Optional[str] = Header(None)
+    ):
+
+    
     # Clean up any accidental leading/trailing whitespace the user might have inputted
     url = url.strip()
 
@@ -70,9 +78,19 @@ def run_audit(url: str = Query(..., description="The URL of the website to audit
     html_report = analyze_html_structure(url)
 
     if keyword:
-        perplexity_res = query_perplexity_visibility(url, keyword, custom_key=x_perplexity_key)
+        key_map = {
+            "perplexity": x_perplexity_key,
+            "chatgpt": x_openai_key,
+            "claude": x_claude_key,
+            "gemini": x_gemini_key,
+            "groq": x_groq_key
+        }
+        ai_matrix = [
+            query_ai_visibility(engine=eng, target_url=url, keyword_query=keyword, custom_key=key)
+            for eng, key in key_map.items()
+        ]
 
-        ai_matrix = [perplexity_res]
+
         positive_hits = sum(1 for ai in ai_matrix if ai["site_found"])
         return {
             "target_url": url,

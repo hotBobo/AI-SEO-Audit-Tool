@@ -23,6 +23,34 @@
                         placeholder="pplx-..." 
                         class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     >
+                    <label for="openaiKey" class="block text-xs font-medium text-slate-600 mb-1">ChatGPT API Key</label>
+                    <input 
+                        type="password" 
+                        id="openaiKey" 
+                        placeholder="sk-proj-..." 
+                        class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                    <label for="claudeKey" class="block text-xs font-medium text-slate-600 mb-1">Claude API Key</label>
+                    <input 
+                        type="password" 
+                        id="claudeKey" 
+                        placeholder="sk-ant-..." 
+                        class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                    <label for="geminiKey" class="block text-xs font-medium text-slate-600 mb-1">Gemini API Key</label>
+                    <input 
+                        type="password" 
+                        id="geminiKey" 
+                        placeholder="AQ.Ab..." 
+                        class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                    <label for="groqKey" class="block text-xs font-medium text-slate-600 mb-1">Groq API Key</label>
+                    <input 
+                        type="password" 
+                        id="groqKey" 
+                        placeholder="gsk_..." 
+                        class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
                 </div>
             </div>
         </details>
@@ -102,6 +130,25 @@
             }
         }
 
+        // Just makes sure the persistant keys are loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            if (document.getElementById('perplexityKey')) {
+                document.getElementById('perplexityKey').value = localStorage.getItem('perplexity_api_key') || '';
+            }
+            if (document.getElementById('chatgptKey')) {
+                document.getElementById('chatgptKey').value = localStorage.getItem('openai_api_key') || '';
+            }
+            if (document.getElementById('claudeKey')) {
+                document.getElementById('claudeKey').value = localStorage.getItem('claude_api_key') || '';
+            }
+            if (document.getElementById('geminiKey')) {
+                document.getElementById('geminiKey').value = localStorage.getItem('gemini_api_key') || '';
+            }
+            if (document.getElementById('groqKey')) {
+                document.getElementById('groqKey').value = localStorage.getItem('groq_api_key') || '';
+            }
+        });
+
         async function runAudit() {
             const urlInput = document.getElementById('urlInput').value.trim();
             const keyInput = document.getElementById('keyInput').value.trim();
@@ -109,8 +156,12 @@
             const loading = document.getElementById('loading');
             const resultsCard = document.getElementById('resultsCard');
             const errorBox = document.getElementById('errorBox');
-            const userPplxKey = document.getElementById('perplexityKey').value.trim();
-            
+            const userPplxKey = document.getElementById('perplexityKey')?.value.trim();
+            const userOpenAIKey = document.getElementById('openaiKey')?.value.trim();
+            const userClaudeKey = document.getElementById('claudeKey')?.value.trim();
+            const userGeminiKey = document.getElementById('geminiKey')?.value.trim();
+            const userGroqKey = document.getElementById('groqKey')?.value.trim();
+
             // 1. Reset UI State
             errorBox.classList.add('hidden');
             resultsCard.classList.add('hidden');
@@ -119,10 +170,29 @@
                 showError("Please enter a URL to analyze.");
                 return;
             }
+
+            const keyMap = [
+                { id: 'perplexity_api_key', val: userPplxKey },
+                { id: 'openai_api_key', val: userOpenAIKey },
+                { id: 'claude_api_key', val: userClaudeKey },
+                { id: 'gemini_api_key', val: userGeminiKey },
+                { id: 'groq_api_key', val: userGroqKey }
+            ];
+
+            keyMap.forEach(item => {
+                if (item.val) {
+                    localStorage.setItem(item.id, item.val);
+                } else {
+                    localStorage.removeItem(item.id);
+                }
+            });
             const headers = {};
-            if (userPplxKey) {
-                headers['X-Perplexity-Key'] = userPplxKey;
-            }
+            if (userPplxKey) headers['X-Perplexity-Key'] = userPplxKey;
+            if (userOpenAIKey) headers['X-OpenAI-Key'] = userOpenAIKey;
+            if (userClaudeKey) headers['X-Claude-Key'] = userClaudeKey;
+            if (userGeminiKey) headers['X-Gemini-Key'] = userGeminiKey;
+            if (userGroqKey) headers['X-Groq-Key'] = userGroqKey;
+            
 
             // 2. Trigger loading states
             loading.classList.remove('hidden');
